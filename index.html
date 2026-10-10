@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#0c2230" />
+<title>TOPL Water Tracker</title>
+<style>
+:root {font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#ecf5f9;background:#0c2230;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;padding:24px 18px;display:flex;justify-content:center;min-height:100vh}
+main{width:min(100%,520px)}header{display:flex;align-items:center;justify-content:space-between;margin:8px 0 24px}
+small,.muted{color:#a8c0c9}h1{font-size:24px;margin:0}h2{font-size:17px;margin:30px 0 10px}
+.card{border:1px solid #355260;background:#163440;border-radius:22px;padding:22px;margin:12px 0;box-shadow:0 12px 32px #06181f55}
+.total{font-size:52px;font-weight:800;letter-spacing:-2px;margin:8px 0 4px}.unit{font-size:19px;font-weight:500;color:#b6d3dc}
+.bar{height:13px;border-radius:20px;background:#35515c;overflow:hidden;margin:20px 0 6px}.fill{height:100%;width:0;background:#72dbca;transition:width .3s}
+button{appearance:none;border:0;border-radius:13px;padding:13px 16px;font-size:15px;font-weight:650;cursor:pointer}
+.primary{background:#75e2d3;color:#092b32;flex:1}.secondary{background:#264753;color:#f0f9fc}.danger{background:#49333c;color:#ffd6df}
+.actions{display:flex;gap:10px;margin:18px 0}.entry{padding:12px 0;border-bottom:1px solid #31515d;display:flex;justify-content:space-between;gap:8px}.entry:last-child{border-bottom:0}
+#status{margin-top:10px;min-height:24px;color:#8ef0cb;font-weight:650}label{display:block;margin:12px 0 5px}input{width:90px;padding:9px;border-radius:8px;border:1px solid #5c7b85;background:#112c36;color:white;font:inherit}.foot{font-size:12px;color:#aac3cd;line-height:1.5;margin:18px 0}
+</style>
+</head>
+<body><main>
+<header><div><h1>💧 TOPL Water Tracker</h1><small>One complete cup = 475 mL</small></div><span aria-hidden="true">🥤</span></header>
+<section class="card">
+<div class="muted">Today</div><div class="total"><span id="todayMl">0</span> <span class="unit">mL</span></div>
+<div id="cups" class="muted">0 cups logged</div>
+<div class="bar" aria-label="Daily goal progress"><div class="fill" id="fill"></div></div>
+<div class="muted" id="goalText"></div>
+<div id="status" role="status" aria-live="polite"></div>
+<div class="actions"><button class="primary" id="add">+ 475 mL</button><button class="secondary" id="undo">Undo last</button></div>
+</section>
+<section class="card"><strong>Settings</strong><label for="goal">Daily goal (mL)</label><input type="number" min="475" max="10000" step="25" id="goal" value="1900" /><p class="muted" style="font-size:13px">The NFC link should end with <code>?add=1</code>. Opening that link logs 475 mL automatically.</p></section>
+<h2>Recent entries</h2><section class="card" id="history"></section>
+<div class="actions"><button class="secondary" id="export">Export CSV</button><button class="danger" id="clear">Clear history</button></div>
+<p class="foot">Data is stored only in this browser on this phone. If you clear browser site data, switch browsers, or use private browsing, your history may be lost. Scanning cannot detect whether your cup is actually empty. Android may ask you to open the NFC link.</p>
+</main>
+<script>
+(()=>{
+'use strict';
+const DATA_KEY='topl_water_events_v1',GOAL_KEY='topl_water_goal_v1',VOLUME=475;
+const el=id=>document.getElementById(id);
+function events(){try{const v=JSON.parse(localStorage.getItem(DATA_KEY)||'[]');return Array.isArray(v)?v.filter(x=>x&&Number.isFinite(x.ts)&&x.ml===VOLUME):[]}catch{return []}}
+function save(items){localStorage.setItem(DATA_KEY,JSON.stringify(items))}
+function day(ts){const d=new Date(ts);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
+function add(){const now=Date.now();const list=events();list.push({ts:now,ml:VOLUME});save(list);render();el('status').textContent='✓ Added 475 mL at '+new Date(now).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+function render(){const items=events();const todays=items.filter(x=>day(x.ts)===day(Date.now()));const amount=todays.length*VOLUME;const goal=Number(localStorage.getItem(GOAL_KEY))||1900;
+el('todayMl').textContent=amount.toLocaleString();el('cups').textContent=todays.length+' cup'+(todays.length===1?'':'s')+' logged';el('fill').style.width=Math.min(100,amount/goal*100)+'%';el('goalText').textContent=`${Math.round(amount/goal*100)}% of ${goal.toLocaleString()} mL daily goal`;
+el('goal').value=goal;const target=el('history');target.replaceChildren();if(!items.length){target.textContent='No cups logged yet.';return}
+items.slice(-25).reverse().forEach(x=>{const div=document.createElement('div');div.className='entry';const a=document.createElement('span');a.textContent=new Date(x.ts).toLocaleString([],{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});const b=document.createElement('strong');b.textContent='+475 mL';div.append(a,b);target.append(div)})}
+el('add').addEventListener('click',add);
+el('undo').addEventListener('click',()=>{const list=events();if(!list.length)return;list.pop();save(list);el('status').textContent='Last entry removed';render()});
+el('goal').addEventListener('change',e=>{const v=Number(e.target.value);if(Number.isFinite(v)&&v>=475&&v<=10000)localStorage.setItem(GOAL_KEY,String(v));render()});
+el('export').addEventListener('click',()=>{const csv='date_time,amount_ml\n'+events().map(e=>new Date(e.ts).toISOString()+','+e.ml).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='topl-water-history.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+el('clear').addEventListener('click',()=>{if(confirm('Delete all water history from this browser?')){save([]);render();el('status').textContent='History cleared'}});
+render();
+if(new URLSearchParams(location.search).get('add')==='1'){
+  // Count each real page load. Browser refresh also counts, so avoid refreshing the scan URL.
+  add();
+}
+})();
+</script>
+</body></html>
